@@ -5,6 +5,8 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 # Logging ayarları
@@ -13,68 +15,96 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# Size iletilen Bot Token
+# Bot Token
 TOKEN = "8659358008:AAEo39bjF47ZheASqwLPpmz_AjvNyKHfHC8"
 
 # Ödeme Bilgileri
-IBAN = "TRXX XXXX XXXX XXXX XXXX XXXX XX"  # Buraya Zeynep Alkoç'a ait IBAN numaranızı tam olarak yazabilirsiniz
+IBAN = "TR06 0001 0021 5470 2002 4550 04"
 ALICI_ADI = "Zeynep Alkoç"
 TUTAR = "400 TL"
 
+# Teslim edilecek VIP Linkler
+VIP_LINKLER = (
+    "🎉 **Ödemeniz Onaylandı!** 🎉\n\n"
+    "İşte Zeynep VIP Arşivi ve Özel Linkleriniz:\n"
+    "🔗 [Arşivi Görüntüle ve İndir](https://t.me/+orneklinkiniz)\n\n"
+    "🎁 **Hediye:** 20 Dakika Ücretsiz Şov Hakkınız tanımlanmıştır!"
+)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  # Gold VIP Tasarımlı Karşılama Mesajı
   user_name = update.effective_user.first_name
 
   text = (
-      "⭐ *ZEYNEP VIP ARCHIVE - GOLD EDITION* ⭐\n\n"
-      f"Hoş geldin, **{user_name}**!\n\n"
-      "👑 Özel arşive erişim sağlamak ve **Gold VIP** ayrıcalıklarından "
-      "faydalanmak üzeresin.\n\n"
-      "💎 *İçerik Detayları:*\n"
-      "• Sınırsız ve Güncel Arşiv Erişimi\n"
-      "• Gizli Özel Linkler\n"
-      "• VIP Üyelere Özel Güncellemeler\n\n"
-      "💳 *Ödeme Bilgileri:*\n"
-      f"• Alıcı: **{ALICI_ADI}**\n"
-      f"• Tutar: **{TUTAR}**\n"
-      f"• IBAN: `{IBAN}`\n\n"
-      "⚠️ *Önemli Not:* Ödemeyi gerçekleştirdikten sonra altta bulunan "
-      '"💸 Ödemeyi Yaptım / Bildir" butonuna basarak dekontunuzu '
-      "yöneticiye iletebilirsiniz."
+      f"⭐ Merhaba **{user_name}**, Zeynep'in Arşivi için ödeme bilgileri "
+      "aşağıdadır:\n\n"
+      f"👤 Alıcı: **{ALICI_ADI}**\n"
+      f"💳 IBAN: `{IBAN}`\n"
+      f"💰 Tutar: **{TUTAR}**\n\n"
+      "🎁 *Not:* Arşivi alan herkese **20 dk show ücretsizdir!**\n\n"
+      "Ödemeyi yaptıktan sonra dekontunuzun ekran görüntüsünü bu sohbete "
+      "gönderin."
   )
 
+  await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def foto_veya_belge_geldi(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+  # Müşteri dekont (fotoğraf veya dosya) gönderdiğinde tetiklenir
+  user = update.effective_user
+
+  # Yöneticiye veya bota gelen dekontu onaylama butonu sunuyoruz
   keyboard = [[
       InlineKeyboardButton(
-          "💸 Ödemeyi Yaptım / Bildir", callback_data="odeme_bildir"
+          f"✅ Onayla ve Link Ver ({user.id})",
+          callback_data=f"onayla_{user.id}",
       )
   ]]
   reply_markup = InlineKeyboardMarkup(keyboard)
 
+  # Müşteriye bilgi mesajı
   await update.message.reply_text(
-      text, reply_markup=reply_markup, parse_mode="Markdown"
+      "⏳ Dekontunuz alındı! Yönetici kontrol ediyor, onaylandığı an linkler"
+      " gelecektir."
   )
+
+  # Not: Bu aşamada botu kendi grubunuzda veya özel sohbetinizde çalıştırıyorsanız
+  # dekontu size (yöneticiye) bildirmesi için ayarlanabilir.
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
 
-  if query.data == "odeme_bildir":
-    await query.message.reply_text(
-        "✅ Ödeme bildirimin alındı!\n\n"
-        "Lütfen ödemeye ait ekran görüntüsünü/dekontu bu sohbete gönder. "
-        "Yönetici kontrol ettikten sonra **Gold VIP** özel linklerin "
-        "tarafına iletilecektir. 🚀"
-    )
+  data = query.data
+  if data.startswith("onayla_"):
+    hedef_user_id = int(data.split("_")[1])
+
+    # Müşteriye özel linkleri gönder
+    try:
+      await context.bot.send_message(
+          chat_id=hedef_user_id, text=VIP_LINKLER, parse_mode="Markdown"
+      )
+      await query.edit_message_text(
+          text="✅ Ödeme onaylandı ve linkler müşteriye başarıyla iletildi!"
+      )
+    except Exception as e:
+      await query.edit_message_text(
+          text=f"❌ Gönderim başarısız oldu (Kullanıcı botu engellemiş olabilir):"
+          f" {e}"
+      )
 
 
 def main():
-  # Uygulama başlatıcı
   application = ApplicationBuilder().token(TOKEN).build()
 
-  # Komutlar ve Buton Dinleyicileri
   application.add_handler(CommandHandler("start", start))
+  # Fotoğraf veya belge (dekont) gönderildiğinde yakalar
+  application.add_handler(
+      MessageHandler(filters.PHOTO | filters.Document.ALL, foto_veya_belge_geldi)
+  )
   application.add_handler(CallbackQueryHandler(button_handler))
 
   print("Bot başarıyla başlatıldı ve çalışıyor...")
