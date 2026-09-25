@@ -1,4 +1,7 @@
 import logging
+import os
+from threading import Thread
+from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -15,8 +18,8 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-# Bot Token
-TOKEN = "8659358008:AAEo39bjF47ZheASqwLPpmz_AjvNyKHfHC8"
+# Yeni Token
+TOKEN = "8659358008:AAHFKg3notOSzpqFfZv7ibkocs4e3ixYMOY"
 
 # Ödeme Bilgileri
 IBAN = "TR06 0001 0021 5470 2002 4550 04"
@@ -31,19 +34,38 @@ VIP_LINKLER = (
     "🎁 **Hediye:** 20 Dakika Ücretsiz Şov Hakkınız tanımlanmıştır!"
 )
 
+# --- RENDER WEB SERVİSİ İÇİN SAHTE SUNUCU (Port Hatasını Önler) ---
+app = Flask("")
+
+
+@app.route("/")
+def home():
+  return "Bot aktif ve çalışıyor!"
+
+
+def run_web():
+  port = int(os.environ.get("PORT", 10000))
+  app.run(host="0.0.0.0", port=port)
+
+
+def keep_alive():
+  t = Thread(target=run_web)
+  t.start()
+# -------------------------------------------------------------
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_name = update.effective_user.first_name
 
   text = (
-      f"⭐ Merhaba **{user_name}**, Zeynep'in Arşivi için ödeme bilgileri "
-      "aşağıdadır:\n\n"
+      f"⭐ Merhaba **{user_name}**, Zeynep'in Arşivi için ödeme bilgileri"
+      f" aşağıdadır:\n\n"
       f"👤 Alıcı: **{ALICI_ADI}**\n"
       f"💳 IBAN: `{IBAN}`\n"
       f"💰 Tutar: **{TUTAR}**\n\n"
       "🎁 *Not:* Arşivi alan herkese **20 dk show ücretsizdir!**\n\n"
-      "Ödemeyi yaptıktan sonra dekontunuzun ekran görüntüsünü bu sohbete "
-      "gönderin."
+      "Ödemeyi yaptıktan sonra dekontunuzun ekran görüntüsünü bu sohbete"
+      " gönderin."
   )
 
   await update.message.reply_text(text, parse_mode="Markdown")
@@ -52,26 +74,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def foto_veya_belge_geldi(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-  # Müşteri dekont (fotoğraf veya dosya) gönderdiğinde tetiklenir
   user = update.effective_user
 
-  # Yöneticiye veya bota gelen dekontu onaylama butonu sunuyoruz
   keyboard = [[
       InlineKeyboardButton(
-          f"✅ Onayla ve Link Ver ({user.id})",
+          f"✅ Onayla و Link Ver ({user.id})",
           callback_data=f"onayla_{user.id}",
       )
   ]]
   reply_markup = InlineKeyboardMarkup(keyboard)
 
-  # Müşteriye bilgi mesajı
   await update.message.reply_text(
       "⏳ Dekontunuz alındı! Yönetici kontrol ediyor, onaylandığı an linkler"
       " gelecektir."
   )
-
-  # Not: Bu aşamada botu kendi grubunuzda veya özel sohbetinizde çalıştırıyorsanız
-  # dekontu size (yöneticiye) bildirmesi için ayarlanabilir.
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -82,7 +98,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
   if data.startswith("onayla_"):
     hedef_user_id = int(data.split("_")[1])
 
-    # Müşteriye özel linkleri gönder
     try:
       await context.bot.send_message(
           chat_id=hedef_user_id, text=VIP_LINKLER, parse_mode="Markdown"
@@ -92,16 +107,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
     except Exception as e:
       await query.edit_message_text(
-          text=f"❌ Gönderim başarısız oldu (Kullanıcı botu engellemiş olabilir):"
-          f" {e}"
+          text=f"❌ Gönderim başarısız oldu: {e}"
       )
 
 
 def main():
+  # Web sunucusunu arka planda başlat (Render port sorununu çözer)
+  keep_alive()
+
   application = ApplicationBuilder().token(TOKEN).build()
 
   application.add_handler(CommandHandler("start", start))
-  # Fotoğraf veya belge (dekont) gönderildiğinde yakalar
   application.add_handler(
       MessageHandler(filters.PHOTO | filters.Document.ALL, foto_veya_belge_geldi)
   )
