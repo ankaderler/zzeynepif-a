@@ -1,101 +1,165 @@
+import os
 import logging
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import threading
+import http.server
+import socketserver
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
-    CallbackQueryHandler,
+    Application,
     CommandHandler,
-    ContextTypes,
+    CallbackQueryHandler,
     MessageHandler,
+    ContextTypes,
     filters,
 )
 
-# Logging ayarları
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+# Render canlı kalma port ayarı
+PORT = int(os.environ.get("PORT", 10000))
 
-# Token
-TOKEN = "8659358008:AAHFKg3notOSzpqFfZv7ibkocs4e3ixYMOY"
+class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"VIP Bot is active and running!")
 
-# Ödeme Bilgileri
+def run_web_server():
+    with socketserver.TCPServer(("", PORT), HealthCheckHandler) as httpd:
+        httpd.serve_forever()
+
+# Arka planda web sunucusunu başlat
+threading.Thread(target=run_web_server, daemon=True).start()
+
+# --- BOT TOKEN BİLGİSİ ---
+TOKEN = "8522565760:AAGq0KNXfgncd6A5nW7CGImFFpy-gmMHXp8"
 IBAN = "TR06 0001 0021 5470 2002 4550 04"
-ALICI_ADI = "Zeynep Alkoç"
-TUTAR = "400 TL"
+RECIPIENT = "Zeynep Alkoç"
+PRICE = "300 TL"
 
-# Teslim edilecek VIP Linkler
-VIP_LINKLER = (
-    "🎉 **Ödemeniz Onaylandı!** 🎉\n\n"
-    "İşte Zeynep VIP Arşivi ve Özel Linkleriniz:\n"
-    "🔗 [Arşivi Görüntüle ve İndir](https://t.me/+orneklinkiniz)\n\n"
-    "🎁 **Hediye:** 20 Dakika Ücretsiz Şov Hakkınız tanımlanmıştır!"
-)
+VIP_LINKS = [
+    "https://t.me/+Aqi4UqSzr4JjZmRk",
+    "https://t.me/+H2z-xlyZ6zM0OTE0",
+    "https://t.me/+p01bQp6XebkzMmI0",
+    "https://t.me/+HqtuwLtoMkkwMWQ0",
+    "https://t.me/+BcHhS86B9ocyMWQ0"
+]
 
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def main_menu():
+    keyboard = [
+        [InlineKeyboardButton("💎 VIP Üyelik Satın Al (300 TL)", callback_data="buy_vip")],
+        [InlineKeyboardButton("📖 Nasıl Satın Alınır?", callback_data="how_to_buy")],
+        [InlineKeyboardButton("🛡️ VIP Özellikler", callback_data="vip_features")],
+        [InlineKeyboardButton("📞 7/24 Canlı Destek", url="https://t.me/SMSPATRONUM")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_name = update.effective_user.first_name
     text = (
-        f"⭐ Merhaba **{user_name}**, Zeynep'in Arşivi için ödeme bilgileri aşağıdadır:\n\n"
-        f"👤 Alıcı: **{ALICI_ADI}**\n"
-        f"💳 IBAN: `{IBAN}`\n"
-        f"💰 Tutar: **{TUTAR}**\n\n"
-        "🎁 *Not:* Arşivi alan herkese **20 dk show ücretsizdir!**\n\n"
-        'Ödemeyi yaptıktan sonra dekontunuzun ekran görüntüsünü "fotoğraf" olarak bu sohbete gönderin.'
+        "🔥 *ELİT VIP ARŞİV — MERKEZİNE HOŞ GELDİNİZ*\n\n"
+        "✨ Tamamen gizli ve özel içeriklerin paylaşıldığı VIP ekosistemimize anında adım atın.\n\n"
+        "👇 Aşağıdaki menüden işlemlerinizi yönetebilirsiniz:"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
-
-
-async def foto_veya_belge_geldi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    keyboard = [[
-        InlineKeyboardButton(
-            f"✅ Onayla ve Link Ver ({user.id})",
-            callback_data=f"onayla_{user.id}",
-        )
-    ]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "⏳ Dekontunuz alındı! Yönetici kontrol ediyor, onaylandığı an linkler gelecektir.",
-        reply_markup=reply_markup,
-    )
-
+    if update.message:
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=main_menu())
+    elif update.callback_query:
+        try:
+            await update.callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=main_menu())
+        except Exception:
+            pass
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     data = query.data
-    if data.startswith("onayla_"):
-        hedef_user_id = int(data.split("_")[1])
 
-        try:
-            await context.bot.send_message(
-                chat_id=hedef_user_id, text=VIP_LINKLER, parse_mode="Markdown"
-            )
-            await query.edit_message_text(
-                text="✅ Ödeme onaylandı ve linkler müşteriye başarıyla iletildi!"
-            )
-        except Exception as e:
-            await query.edit_message_text(text=f"❌ Gönderim başarısız oldu: {e}")
+    text = ""
+    keyboard = []
 
+    if data == "buy_vip":
+        text = (
+            f"💎 *ELİT VIP — GÜVENLİ ÖDEME ARAYÜZÜ*\n\n"
+            f"📦 Paket: *Sınırsız Premium VIP Erişimi*\n"
+            f"💰 Tutar: *{PRICE}*\n\n"
+            f"💳 *Resmi Havale / FAST Bilgileri*\n"
+            f"IBAN:\n`{IBAN}`\n\n"
+            f"Alıcı Adı: *{RECIPIENT}*\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"1️⃣ Yukarıdaki IBAN hesabına tam *{PRICE}* gönderin.\n"
+            "2️⃣ İşlem sonrasında **Dekontu / Ekran Görüntüsünü** doğrudan bu sohbet penceresine gönderin.\n"
+            "3️⃣ Sistem dekontu onayladığı an özel VIP davet linkleriniz saniyeler içinde otomatik gelecektir!"
+        )
+        keyboard = [[InlineKeyboardButton("⬅️ Ana Menüye Dön", callback_data="home")]]
+
+    elif data == "how_to_buy":
+        text = (
+            "📖 *SATIN ALMA REHBERİ*\n\n"
+            "1️⃣ 'VIP Üyelik Satın Al' butonundan IBAN'a 300 TL gönderin.\n"
+            "2️⃣ Dekontun ekran görüntüsünü bota fotoğraf olarak atın.\n"
+            "3️⃣ Bot dekontu algılayıp VIP linkleri anında size versin!"
+        )
+        keyboard = [[InlineKeyboardButton("⬅️ Ana Menüye Dön", callback_data="home")]]
+
+    elif data == "vip_features":
+        text = (
+            "🛡️ *VIP AYRICALIKLARI*\n\n"
+            "• Sınırsız ve ömür boyu kanal erişimi\n"
+            "• Günlük güncellenen özel arşivler\n"
+            "• 7/24 öncelikli destek hattı"
+        )
+        keyboard = [[InlineKeyboardButton("⬅️ Ana Menüye Dön", callback_data="home")]]
+
+    elif data == "home":
+        text = (
+            "🔥 *ELİT VIP ARŞİV — MERKEZİNE HOŞ GELDİNİZ*\n\n"
+            "✨ Tamamen gizli ve özel içeriklerin paylaşıldığı VIP ekosistemimize anında adım atın.\n\n"
+            "👇 Aşağıdaki menüden işlemlerinizi yönetebilirsiniz:"
+        )
+        keyboard = [
+            [InlineKeyboardButton("💎 VIP Üyelik Satın Al (300 TL)", callback_data="buy_vip")],
+            [InlineKeyboardButton("📖 Nasıl Satın Alınır?", callback_data="how_to_buy")],
+            [InlineKeyboardButton("🛡️ VIP Özellikler", callback_data="vip_features")],
+            [InlineKeyboardButton("📞 7/24 Canlı Destek", url="https://t.me/SMSPATRONUM")],
+        ]
+
+    try:
+        await query.edit_message_text(
+            text, 
+            parse_mode="Markdown", 
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    except Exception as e:
+        # İçerik aynı kaldığında oluşan Telegram hatasını yakalar ve botun çökmesini önler
+        if "Message is not modified" in str(e):
+            pass
+        else:
+            logger.error(f"Buton menü değiştirme hatası: {e}")
+
+async def receipt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.photo or update.message.document:
+        links_text = "\n".join([f"🔗 {link}" for link in VIP_LINKS])
+        text = (
+            "✅ *DEKONT ONAYLANDI! ÖDEME ALINDI.*\n\n"
+            "🎉 Tebrikler! Özel davet linkleriniz aşağıdadır:\n\n"
+            f"{links_text}\n\n"
+            "⚠️ *Bu linkler kişiye özeldir, paylaşılması yasaktır.*"
+        )
+        keyboard = [[InlineKeyboardButton("🏠 Ana Menüye Dön", callback_data="home")]]
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    await update.message.reply_text("📸 Lütfen geçerli bir dekont ekran görüntüsü veya dosyası gönderin.")
 
 def main():
-    # Uygulama oluşturucu
-    application = ApplicationBuilder().token(TOKEN).build()
-
-    # Handler'ları ekleme
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(
-        MessageHandler(filters.PHOTO | filters.Document.ALL, foto_veya_belge_geldi)
-    )
-    application.add_handler(CallbackQueryHandler(button_handler))
-
-    print("Bot başarıyla başlatıldı ve çalışıyor...")
+    app = Application.builder().token(TOKEN).build()
     
-    # Polling başlatma (Durdurma sinyallerini otomatik yönetir)
-    application.run_polling()
-
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt_handler))
+    
+    logger.info("Bot Yeni Token ile Polling modunda başlatılıyor...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
