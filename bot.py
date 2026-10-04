@@ -29,8 +29,8 @@ def run_web_server():
 # Arka planda web sunucusunu başlat
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# --- BOT TOKEN BİLGİSİ ---
-TOKEN = "8522565760:AAGq0KNXfgncd6A5nW7CGImFFpy-gmMHXp8"
+# --- YENİ TOKEN BİLGİSİ ---
+TOKEN = "8522565760:AAExDDLlZ9EL6_b68C4GWb9rjAHVyIX_gOQ"
 IBAN = "TR06 0001 0021 5470 2002 4550 04"
 RECIPIENT = "Zeynep Alkoç"
 PRICE = "300 TL"
@@ -63,11 +63,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     if update.message:
         await update.message.reply_text(text, parse_mode="Markdown", reply_markup=main_menu())
-    elif update.callback_query:
-        try:
-            await update.callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=main_menu())
-        except Exception:
-            pass
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -108,7 +103,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Günlük güncellenen özel arşivler\n"
             "• 7/24 öncelikli destek hattı"
         )
-        keyboard = [[InlineKeyboardButton("⬅️ Ana Menüye Dön", callback_data="home")]]
+        keyboard = [[InlineKeyboardButton("⬅️️ Ana Menüye Dön", callback_data="home")]]
 
     elif data == "home":
         text = (
@@ -123,18 +118,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📞 7/24 Canlı Destek", url="https://t.me/SMSPATRONUM")],
         ]
 
-    try:
-        await query.edit_message_text(
-            text, 
-            parse_mode="Markdown", 
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    except Exception as e:
-        # İçerik aynı kaldığında oluşan Telegram hatasını yakalar ve botun çökmesini önler
-        if "Message is not modified" in str(e):
-            pass
-        else:
-            logger.error(f"Buton menü değiştirme hatası: {e}")
+    # Mesajı güncellemek yerine yeni bir mesaj göndererek olası hataları tamamen engelliyoruz
+    await query.message.reply_text(
+        text, 
+        parse_mode="Markdown", 
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def receipt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo or update.message.document:
